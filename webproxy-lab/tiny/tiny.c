@@ -93,7 +93,10 @@ void doit(int fd)
    *    - if (Rio_readlineb(...) <= 0) return;
    *    - sscanf(buf, "%s %s %s", method, uri, version);
    */
-  Rio_readlineb(&rio, buf, MAXLINE);
+  if (Rio_readlineb(&rio, buf, MAXLINE) <= 0)
+  {
+    return;
+  }
   sscanf(buf, "%s %s %s", method, uri, version);
 
   /*
@@ -310,7 +313,7 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
       strcpy(cgiargs, "");
     }
 
-    strcpy(filename, "");
+    strcpy(filename, ".");
     strcat(filename, uri);
     return 0;
   }
@@ -357,12 +360,13 @@ void serve_static(int fd, char *filename, int filesize)
    *
    *    즉, 상태줄 + 여러 헤더 + 마지막 빈 줄까지 만들어야 한다.
    */
-
-  sprintf(buf, "HTTP/1.0 200 OK\r\n");
-  sprintf(buf, "Server: Tiny Web Server\r\n");
-  sprintf(buf, "Connection: close\r\n");
-  sprintf(buf, "Content-length: %d\r\n");
-  sprintf(buf, "Content-type: %s\r\n\r\n");
+  snprintf(buf, sizeof(buf),
+           "HTTP/1.0 200 OK\r\n"
+           "Server: Tiny Web Server\r\n"
+           "Connection: close\r\n"
+           "Content-length: %d\r\n"
+           "Content-type: %s\r\n\r\n",
+           filesize, filetype);
 
   /*
    * 3. 만든 헤더를 클라이언트에 먼저 보낸다.
@@ -435,7 +439,7 @@ void get_filetype(char *filename, char *filetype)
   }
   else if (strstr(filename, ".gif"))
   {
-    strcpy(filetype, "image/fig");
+    strcpy(filetype, "image/gif");
   }
   else if (strstr(filename, ".png"))
   {
@@ -447,7 +451,7 @@ void get_filetype(char *filename, char *filetype)
   }
   else
   {
-    strcpy(filetype, "text/plan");
+    strcpy(filetype, "text/plain");
   }
 }
 
@@ -518,6 +522,7 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
   {
     setenv("QUERY_STRING", cgiargs, 1);
     Dup2(fd, STDOUT_FILENO);
+    Close(fd);
     Execve(filename, emptylist, environ);
   }
 
@@ -558,14 +563,17 @@ void clienterror(int fd, char *cause, char *errnum,
    *
    *    즉 body는 여러 sprintf를 이어 붙여서 만드는 경우가 많다.
    */
-  sprintf(body, "<html><title>Tiny Error</title>");
-  sprintf(body, "%s<body bgcolor="
-                "ffffff"
-                ">\r\n",
-          body);
-  sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg);
-  sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
-  sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
+  body[0] = '\0';
+  snprintf(body + strlen(body), sizeof(body) - strlen(body),
+           "<html><title>Tiny Error</title>");
+  snprintf(body + strlen(body), sizeof(body) - strlen(body),
+           "<body bgcolor=\"ffffff\">\r\n");
+  snprintf(body + strlen(body), sizeof(body) - strlen(body),
+           "%s: %s\r\n", errnum, shortmsg);
+  snprintf(body + strlen(body), sizeof(body) - strlen(body),
+           "<p>%s: %s\r\n", longmsg, cause);
+  snprintf(body + strlen(body), sizeof(body) - strlen(body),
+           "<hr><em>The Tiny Web server</em>\r\n");
 
   /*
    * 2. HTTP 상태줄(status line)을 만든다.
@@ -599,5 +607,5 @@ void clienterror(int fd, char *cause, char *errnum,
    * 5. 마지막으로 HTML body 자체를 보낸다.
    *    - Rio_writen(fd, body, strlen(body));
    */
-  Rio_writen(fd, buf, strlen(body));
+  Rio_writen(fd, body, strlen(body));
 }
