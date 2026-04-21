@@ -328,7 +328,8 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
  * 3. 헤더를 먼저 클라이언트에 보낸다
  * 4. 파일 내용을 읽어서 보낸다
  *
- * 책 버전 Tiny는 보통 Mmap을 사용해서 파일을 메모리에 매핑한 뒤 전송한다.
+ * 11.9 과제에서는 책 버전의 Mmap/Munmap 대신
+ * Malloc + Rio_readn + Rio_writen + Free 흐름으로 구현해야 한다.
  */
 void serve_static(int fd, char *filename, int filesize)
 {
@@ -380,30 +381,47 @@ void serve_static(int fd, char *filename, int filesize)
   printf("%s", buf);
 
   /*
+   * 11.9 과제용 의사코드:
+   *
    * 4. 정적 파일을 읽기 전용으로 연다.
    *    - srcfd = Open(filename, O_RDONLY, 0);
-   */
-  srcfd = Open(filename, O_RDONLY, 0);
-  /*
-   * 5. 파일 내용을 메모리에 매핑한다.
-   *    - srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
-   *    - 매핑이 끝나면 srcfd는 Close(srcfd);
    *
-   *    왜 Mmap을 쓰나?
-   *    - 파일 내용을 한 번에 메모리처럼 다룰 수 있어서 전송이 단순해진다
-   */
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
-  Close(srcfd);
-  /*
-   * 6. 파일 본문을 클라이언트에 보낸다.
+   * 5. 파일 크기만큼 힙 메모리를 할당한다.
+   *    - srcp = Malloc(filesize);
+   *
+   * 6. 파일 내용을 디스크에서 버퍼(srcp)로 읽어온다.
+   *    - Rio_readn(srcfd, srcp, filesize);
+   *
+   * 7. 파일 디스크립터를 닫는다.
+   *    - Close(srcfd);
+   *
+   * 8. 메모리에 읽어온 파일 내용을 클라이언트에 보낸다.
    *    - Rio_writen(fd, srcp, filesize);
+   *
+   * 9. 힙 메모리를 해제한다.
+   *    - Free(srcp);
+   *
+   * 즉, 11.9에서는:
+   *    Mmap(...);
+   *    Rio_writen(fd, srcp, filesize);
+   *    Munmap(srcp, filesize);
+   *
+   * 가 아니라
+   *
+   *    srcp = Malloc(filesize);
+   *    Rio_readn(srcfd, srcp, filesize);
+   *    Rio_writen(fd, srcp, filesize);
+   *    Free(srcp);
+   *
+   * 흐름으로 바뀐다.
    */
+  srcfd = Open(filename, O_RDONLY, 0); // 서버 로컬 디스크에서 파일 읽는 fd
+  srcp = Malloc(filesize);
+  Rio_readn(srcfd, srcp, filesize);
+  Close(srcfd);
+
   Rio_writen(fd, srcp, filesize);
-  /*
-   * 7. 매핑했던 메모리를 해제한다.
-   *    - Munmap(srcp, filesize);
-   */
-  Munmap(srcp, filesize);
+  Free(srcp);
 }
 
 /*
